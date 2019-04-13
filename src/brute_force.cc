@@ -8,6 +8,8 @@
 #include <iostream>
 //#include <mpi.h>
 
+#define EffectivelyZero 0.000001
+
 using namespace std;
 
 struct Point { double x, y, z; };
@@ -79,19 +81,17 @@ main() {
     for (j = 0; j < n; j++){
       for (k = 0; k < n; k++) {  
 	  if (i != j && j != k && k != i){
-        if (faceOrient(P[i],P[j],P[k],centroid) >= 0){
+        if (faceOrient(P[i],P[j],P[k],centroid) >= 0.0){
 			continue;
 		}
         for (l = 0; l < n; l++){  // check facet ijk
-          if (faceOrient(P[i],P[j],P[k],P[l]) > 0){			  
+          if (faceOrient(P[i],P[j],P[k],P[l]) > EffectivelyZero){		
 			  break;
 		  }
 		}
         if (l == n){
 			//std::cout << i << " " << j << " " << k << "\n";
-			outfile << toString(P[i]) << "\n";
-			outfile << toString(P[j]) << "\n";
-			outfile << toString(P[k]) << "\n";
+			outfile << "{" << toString(P[i]) << ", " << toString(P[j]) << ", " << toString(P[k]) << "}\n";
 		}
 	  }
       }
