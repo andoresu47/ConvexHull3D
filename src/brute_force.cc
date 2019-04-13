@@ -50,30 +50,38 @@ inline string toString(Point p){
 main() {
 
   int n, i, j, k, l;
-  std::cin >> n;
+  double x, y, z;
+  char left_bracket, comma_1, comma_2, right_bracket;
+  string line;
   
-  ofstream outfile ("output.out");
-
+  //std::cin >> n;
+  
+  //ofstream pointsfile ("ch_points.out");
+  ifstream infile ("points.in");
+  
+  infile >> n;
+  
   Point *P = new Point[n]; 
   Point centroid = Point();
-  for (i = 0; i < n; i++) { 
-	std::cin >> P[i].x; 
-	std::cin >> P[i].y; 
-	std::cin >> P[i].z; 
-	
-	centroid.x += P[i].x;
-	centroid.y += P[i].y;
-	centroid.z += P[i].z;
+  
+  for (i = 0; i < n; i++){
+	  infile >> left_bracket >> P[i].x >> comma_1 >> P[i].y >> comma_2 >> P[i].z >> right_bracket;
+	  centroid.x += P[i].x;
+	  centroid.y += P[i].y;
+	  centroid.z += P[i].z;
   }
   
   centroid.x = centroid.x / n;
   centroid.y = centroid.y / n;
   centroid.z = centroid.z / n;
   
+  infile.close();  
+  ofstream outfile ("output.out");
+  
   //for (i = 0; i < n; i++) { std::cout << P[i].x << " " << P[i].y << " " << P[i].z << "\n"; }
   //std::cout << centroid.x << " " << centroid.y << " " << centroid.z << "\n";
   
-  qsort (P, n, sizeof(Point), Comparator);
+  //qsort (P, n, sizeof(Point), Comparator);
   
   //for (i = 0; i < n; i++) { std::cout << P[i].x << " " << P[i].y << " " << P[i].z << "\n"; }
     
@@ -91,7 +99,8 @@ main() {
 		}
         if (l == n){
 			//std::cout << i << " " << j << " " << k << "\n";
-			outfile << "{" << toString(P[i]) << ", " << toString(P[j]) << ", " << toString(P[k]) << "}\n";
+			//pointsfile << "{" << toString(P[i]) << ", " << toString(P[j]) << ", " << toString(P[k]) << "}\n";
+			outfile << "{" << i << ", " << j << ", " << k << "}\n";
 		}
 	  }
       }
