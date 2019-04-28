@@ -56,7 +56,8 @@ int Comparator(const void * a, const void * b){
 
 int main(int argc, char **argv){
 	/* Local variables */
-	int n, i;  
+	int n, i, I;  
+	Point *P, *PLocal; 
 	
 	/* Initialize MPI */
 	int rank, size;
@@ -85,9 +86,9 @@ int main(int argc, char **argv){
 		infile = fopen ("points.in", "r");
 	
 		fscanf(infile, "%d\n", &n);
-		printf("%d\n", n);
+		//printf("%d\n", n);
 	
-		Point *P = (Point*) malloc (n * sizeof (Point));
+		P = (Point*) malloc (n * sizeof (Point));
 	
 		for(i = 0; i < n; i++){
 			fscanf(infile, "{%lf, %lf, %lf}\n", &P[i].x, &P[i].y, &P[i].z);
@@ -116,19 +117,10 @@ int main(int argc, char **argv){
 			printf("%lf %lf %lf\n", P[i].x, P[i].y, P[i].z);
 		}
 		*/
-		
-		MPI_Send(&(P[0]), 1, mpi_point_type, 1, 0, MPI_COMM_WORLD);
-		
-		printf("Rank %d: sent structure point: {%lf, %lf, %lf}, [%d, %d]\n", rank, P[0].x, P[0].y, P[0].z, P[0].prev, P[0].next);
-	}
-	if(rank == 1){
-		Point recv;
-		MPI_Recv(&recv, 1, mpi_point_type, 0, 0, MPI_COMM_WORLD, &status);
-		printf("Rank %d: Received structure point: {%lf, %lf, %lf}, [%d, %d]\n", rank, recv.x, recv.y, recv.z, recv.prev, recv.next);
 	}
 	
 	/* Every processor needs to have the total number of points n */
-	//MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
 			
 	/* Compute local indices for data distribution */
 	//I = (int) ((n + size + rank - 1)/ size); 
@@ -139,9 +131,17 @@ int main(int argc, char **argv){
 	// int mu_prefix = rank * L + MIN(rank, R);
 	// int mu;
 	
-	// PLocal = (Point *) malloc(I * sizeof(Point));
+	I = n / size;
+	PLocal = (Point *) malloc(I * sizeof(Point));
+		
+	MPI_Scatter(P, I, mpi_point_type, PLocal, I, mpi_point_type, 0, MPI_COMM_WORLD);
 	
-	//// MPI_Scatterv(P, I, displs, MPI_, recvbuf, recvcount, recvtype, 0, MPI_COMM_WORLD);
+	// MPI_Scatterv(P, I, displs, MPI_, recvbuf, recvcount, recvtype, 0, MPI_COMM_WORLD);
+	
+	printf("Rank %d: \n", rank);
+	for(i = 0; i < I; i++){
+		printf("{%lf, %lf, %lf}, [%d, %d]\n", PLocal[i].x, PLocal[i].y, PLocal[i].z, PLocal[i].prev, PLocal[i].next);
+	}
 	
 	MPI_Type_free(&mpi_point_type);
 	MPI_Finalize();
