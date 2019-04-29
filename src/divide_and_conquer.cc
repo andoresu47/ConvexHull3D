@@ -8,7 +8,7 @@
  *		{x_1, y_2, z_3}
  *		...
  *		{x_n, y_n, z_n}
- 
+ * 
  * output: indices of facets
  * 		{i_1, j_1, k_1}
  * 		{i_2, j_2, k_2}
@@ -52,22 +52,38 @@ const double INF = 1e99;
 static Point nil = {INF, INF, INF, 0, 0};
 Point *NIL = &nil;
 
+/*
+* Function to determine if any of a triplet of point pointers is null. 
+*/
 inline bool hasnil(Point *p, Point *q, Point *r){
 	return (p == NIL || q == NIL || r == NIL);
 }
 
-inline double turn(Point *p, Point *q, Point *r) {  // <0 iff cw
-	//if (p == NIL || q == NIL || r == NIL) return 1.0;
-	return (q->x-p->x)*(r->y-p->y) - (r->x-p->x)*(q->y-p->y);
+/*
+* Function to determine if points p-q-r form a clockwise/left turn, 
+* or a counterclockwise/right turn. Returns < 0 and > 0 respectively. 
+*/
+inline double turn(Point *p, Point *q, Point *r) {  
+	return (q->x - p->x) * (r->y - p->y) - 
+			(r->x - p->x) * (q->y - p->y);
 }
 
-inline double time(Point *p, Point *q, Point *r) {  // when turn changes
-	if (p == NIL || q == NIL || r == NIL) return INF;
-	return ((q->x-p->x)*(r->z-p->z) - (r->x-p->x)*(q->z-p->z)) / turn(p,q,r);
+/*
+* Function to determine the time when p-q-r will change between a left/right turn (ie. become colinear)
+*/
+inline double time(Point *p, Point *q, Point *r) { 
+	if (p == NIL || q == NIL || r == NIL){
+		return INF;
+	}
+	return ((q->x - p->x) * (r->z - p->z) - 
+			(r->x - p->x) * (q->z - p->z)) / turn(p, q, r);
 }
 
-inline string toString(Point p){
-	std::string x = "{" + std::to_string(p.x) + ", " + std::to_string(p.y) + ", " + std::to_string(p.z) + "}";
+/*
+* Function to provide a string representation of a point. 
+*/
+inline string toString(Point *p){
+	std::string x = "{" + std::to_string(p->x) + ", " + std::to_string(p->y) + ", " + std::to_string(p->z) + "}";
 	return x;
 }
 
