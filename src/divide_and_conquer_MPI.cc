@@ -32,7 +32,9 @@
 const double INF = 1e30;
 const int NIL = -1;
 
-// Point data structure
+/**
+ * Point data structure, with emulated pointers to next and previous points representing edges.
+ */ 
 typedef struct Point{ 
 	double x, y, z; 
 	int prev, next;
@@ -179,6 +181,7 @@ void swapArrays(int **pa, int **pb)
 void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {	
 	// u: end of left hull based on x coordinate
 	// v: beginning of right hull based on x coordinate
+	// mid: beginning of right hull based on x coordinate
 	int u, v, mid;  
 	double t[6], oldt, newt;  
 	int i, j, k, l, minl;
@@ -196,7 +199,7 @@ void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 		p1 = u; q1 = v; r1 = (head + v)->next;
 		p2 = (head + u)->prev; q2 = u; r2 = v;
 		
-		// Lower hull
+		// Lower hull: turn must be negative
 		if(bottom){
 			if (!hasnil(p1, q1, r1) && turn((head + p1), (head + q1), (head + r1)) < 0){
 				v = (head + v)->next;
@@ -208,7 +211,7 @@ void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 				break;
 			}
 		}
-		// Upper hull
+		// Upper hull: turn must be positive
 		else{
 			if (!hasnil(p1, q1, r1) && turn((head + p1), (head + q1), (head + r1)) > 0){
 				v = (head + v)->next;
@@ -347,7 +350,7 @@ void hull(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 }
 
 /*
- * Print faces on the hull
+ * Print hull faces.
  */
 void printHull(int *A, Point *head)
 {
@@ -363,8 +366,8 @@ int main(int argc, char **argv){
 	/* Local variables */
 	int n, i, localArraysize, localNumPoints, height;
 	int parent, rightChild, rightChildSize, myHeight;	
-	Point *P, *PLocal; 
-	int *ALocal, *BLocal;
+	Point *P, *PLocalL, *PLocalU; 
+	int *ALocalL, *ALocalU, *BLocalL, *BLocalU;
 	
 	// For printing results in testing phase
 	int turn = 0;
@@ -431,18 +434,30 @@ int main(int argc, char **argv){
 				
 	/* Allocate memory for local point array based on maximum depth of corresponding processor */	
 	localArraysize = n / pow(2, maxDepth(height, rank));
-	PLocal = (Point *) malloc(localArraysize * sizeof(Point));
+	PLocalL = (Point *) malloc(localArraysize * sizeof(Point));
+	PLocalU = (Point *) malloc(localArraysize * sizeof(Point));
 	
 	/* Scatter to fill with equally-sized value chunks */
 	localNumPoints = n / numProcs;
-	MPI_Scatter(P, localNumPoints, mpi_point_type, PLocal, localNumPoints, mpi_point_type, 0, MPI_COMM_WORLD);
-		
-	/* Allocate memory for local main and temporal event arrays */
-	ALocal = (int *) malloc (2 * localArraysize * sizeof (int));
-	BLocal = (int *) malloc (2 * localArraysize * sizeof (int));
+	MPI_Scatter(P, localNumPoints, mpi_point_type, PLocalL, localNumPoints, mpi_point_type, 0, MPI_COMM_WORLD);
 	
-	/* Compute the local 3D Convex Hull */
-	hull(true, PLocal, localNumPoints, ALocal, BLocal, PLocal);
+	// Free memory
+	if(rank == 0){
+		free(P);
+	}
+	
+	/* Copy lower hull point array into the upper hull array*/
+	memcpy(PLocalU, PLocalL, localArraysize * sizeof(Point));
+		
+	/* Allocate memory for local main and temporal event arrays, for both lower and upper hulls */
+	ALocalL = (int *) malloc (2 * localArraysize * sizeof (int));
+	ALocalU = (int *) malloc (2 * localArraysize * sizeof (int));
+	BLocalL = (int *) malloc (2 * localArraysize * sizeof (int));
+	BLocalU = (int *) malloc (2 * localArraysize * sizeof (int));
+	
+	/* Compute the local lower and upper 3D Convex Hulls */
+	hull(true, PLocalL, localNumPoints, ALocalL, BLocalL, PLocalL);
+	hull(false, PLocalU, localNumPoints, ALocalU, BLocalU, PLocalU);
 	
 	/* Merge local 3D convex hulls recursively */
 	myHeight = 0;
@@ -453,30 +468,42 @@ int main(int argc, char **argv){
 		    rightChild = (rank | (1 << myHeight));
 			rightChildSize = n / pow(2, maxDepth(height, rightChild));
 			
-			swapArrays(&ALocal, &BLocal);
+			swapArrays(&ALocalL, &BLocalL);
+			swapArrays(&ALocalU, &BLocalU);
 			
   		    /* Receive arrays from right child */
-  		    MPI_Recv(&(PLocal[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, MPI_COMM_WORLD, &status);
-			MPI_Recv(&(BLocal[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, MPI_COMM_WORLD, &status);
-
+  		    MPI_Recv(&(PLocalL[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, MPI_COMM_WORLD, &status);
+			MPI_Recv(&(BLocalL[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, MPI_COMM_WORLD, &status);
+			MPI_Recv(&(PLocalU[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 1, MPI_COMM_WORLD, &status);
+			MPI_Recv(&(BLocalU[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 1, MPI_COMM_WORLD, &status);
+			
   		    // Merge convex hulls 
-  		    merge(true, PLocal, rightChildSize * 2, ALocal, BLocal, PLocal);
+  		    merge(true, PLocalL, rightChildSize * 2, ALocalL, BLocalL, PLocalL);
+			merge(false, PLocalU, rightChildSize * 2, ALocalU, BLocalU, PLocalU);
 			
             myHeight++;
 
         } else { // right child
 			// Re-index the arrays to match parent indexing
-			reindexPoints(PLocal, localArraysize, localArraysize);
-			reindexEvents(ALocal, localArraysize);
+			reindexPoints(PLocalL, localArraysize, localArraysize);
+			reindexEvents(ALocalL, localArraysize);
+			reindexPoints(PLocalU, localArraysize, localArraysize);
+			reindexEvents(ALocalU, localArraysize);
 			
 			// Send local point and event arrays to parent
-            MPI_Send(PLocal, localArraysize, mpi_point_type, parent, 0, MPI_COMM_WORLD);
-			MPI_Send(ALocal, localArraysize * 2, MPI_INT, parent, 0, MPI_COMM_WORLD);
+            MPI_Send(PLocalL, localArraysize, mpi_point_type, parent, 0, MPI_COMM_WORLD);
+			MPI_Send(ALocalL, localArraysize * 2, MPI_INT, parent, 0, MPI_COMM_WORLD);
+			MPI_Send(PLocalU, localArraysize, mpi_point_type, parent, 1, MPI_COMM_WORLD);
+			MPI_Send(ALocalU, localArraysize * 2, MPI_INT, parent, 1, MPI_COMM_WORLD);
+			
             if(myHeight != 0){
 				// Free memory
-				free(PLocal);  
-				free(ALocal);
-				free(BLocal);
+				free(PLocalL);  
+				free(ALocalL);
+				free(BLocalL);
+				free(PLocalU);  
+				free(ALocalU);
+				free(BLocalU);
 			}
             myHeight = height;
         }
@@ -488,11 +515,22 @@ int main(int argc, char **argv){
 		FILE * outfile;
 		outfile = fopen ("output_DC_MPI.out", "w");
 		
-		for (int i = 0; ALocal[i] != NIL; i++) { 
-			fprintf(outfile, "{%d, %d, %d}\n", (PLocal + ALocal[i])->prev, ALocal[i], (PLocal + ALocal[i])->next);
-			act(ALocal[i], PLocal);
+		for (int i = 0; ALocalL[i] != NIL; i++) { 
+			fprintf(outfile, "{%d, %d, %d}\n", (PLocalL + ALocalL[i])->prev, ALocalL[i], (PLocalL + ALocalL[i])->next);
+			act(ALocalL[i], PLocalL);
+		}
+		for (int i = 0; ALocalU[i] != NIL; i++) { 
+			fprintf(outfile, "{%d, %d, %d}\n", (PLocalU + ALocalU[i])->prev, ALocalU[i], (PLocalU + ALocalU[i])->next);
+			act(ALocalU[i], PLocalU);
 		}
 		fclose(outfile);
+		// Free memory
+		free(PLocalL);  
+		free(ALocalL);
+		free(BLocalL);
+		free(PLocalU);  
+		free(ALocalU);
+		free(BLocalU);
 	}
 	
 	MPI_Type_free(&mpi_point_type);
