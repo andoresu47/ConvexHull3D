@@ -1,5 +1,5 @@
 /* 
- * Parallel implementation of a O(n log n) divide-and-conquer algorithm to find the convex hull in 3D, 
+ * MPI parallel implementation of a O(n log n) divide-and-conquer algorithm to find the convex hull in 3D, 
  * based on the kinetic-2d approach proposed in the article: "A Minimalist’s Implementation 
  * of the 3-d Divide-and-Conquer Convex Hull Algorithm", by Timothy M. Chan. 
  * 
@@ -33,10 +33,10 @@ const double INF = 1e30;
 const int NIL = -1;
 
 // Point data structure
-struct Point{ 
+typedef struct Point{ 
 	double x, y, z; 
 	int prev, next;
-};
+} Point;
 
 /*
  * Function for determining the inequality/equality relationship between two Points based on their X coordinate.  
@@ -73,7 +73,7 @@ inline double turn(Point *p, Point *q, Point *r){
 }
 
 /*
-* Function to determine the time when p-q-r will change between a left/right turn (ie. become colinear)
+* Function to determine the time when p-q-r will change between a left/right turn (ie. become colinear).
 */
 inline double time(int pIndex, int qIndex, int rIndex, Point *head){ 
 	if (pIndex == NIL || qIndex == NIL || rIndex == NIL){
@@ -87,7 +87,7 @@ inline double time(int pIndex, int qIndex, int rIndex, Point *head){
 }
 
 /*
- * Function to insert delete points from the linked-list-like point structure
+ * Function to insert delete points from the linked-list-like point structure.
  */
 void act(int pointIndex, Point *head){
 	// Insert point
@@ -103,7 +103,7 @@ void act(int pointIndex, Point *head){
 }
 
 /*
- * Function to map local to global indices
+ * Function to map local to global indices.
  */
 int getGlobalIndex(int numPts, int numProc, int rank, int idx){
 	int L = numPts / numProc;
@@ -142,14 +142,14 @@ void reindexEvents(int *A, int offset){
 }
 
 /*
- * Function to get indices of array given two pointers: head and displaced
+ * Function to get indices of array given two pointers: head and displaced.
  */
 int getIndex(Point *head, Point *displaced){
 	return (displaced - head);
 }
 
 /*
- * Function to compute the maximum depth of a processor in the tree
+ * Function to compute the maximum depth of a processor in the tree.
  */
 int maxDepth(int treeHeight, int rank){
 	int h, i, t;
@@ -163,7 +163,7 @@ int maxDepth(int treeHeight, int rank){
 }
 
 /* 
- * Function to swap pointers to integer arrays
+ * Function to swap pointers to integer arrays.
  */
 void swapArrays(int **pa, int **pb)
 {
@@ -174,7 +174,7 @@ void swapArrays(int **pa, int **pb)
 }
 
 /*
- * Merging step for the divide-and-conquer algorithm to find the convex hull in 3D 
+ * Merging step for the divide-and-conquer algorithm to find the convex hull in 3D. 
  */
 void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {	
 	// u: end of left hull based on x coordinate
@@ -339,7 +339,7 @@ void hull(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 		return; 
 	}
 		
-	// Recurse on left and right sides, swapping the A and B arrays
+	// Recurse on left and right sides, swapping the A and B event arrays
 	hull(bottom, list, n/2, B, A, head);  							// build left side
 	hull(bottom, list + n/2, n-n/2, B+n/2*2, A+n/2*2, head);		// build right side
 
@@ -366,13 +366,14 @@ int main(int argc, char **argv){
 	Point *P, *PLocal; 
 	int *ALocal, *BLocal;
 	
+	// For printing results in testing phase
 	int turn = 0;
 	
 	/* Initialize MPI */
 	int rank, numProcs;
 	MPI_Status status;
 	
-	/* For creating a type of struct Point */
+	/* Create a type of struct Point */
 	MPI_Datatype mpi_point_type;
     MPI_Datatype types[5] = {MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_INT, MPI_INT};
 	int blocklengths[5] = {1, 1, 1, 1, 1};
@@ -399,7 +400,6 @@ int main(int argc, char **argv){
 		infile = fopen ("points.in", "r");
 	
 		fscanf(infile, "%d\n", &n);
-		//printf("%d\n", n);
 	
 		P = (Point*) malloc (n * sizeof (Point));
 	
@@ -424,12 +424,6 @@ int main(int argc, char **argv){
 				fclose(auxfile);
 			}
 		}
-
-		/* Print points 
-		for(i = 0; i < n; i++){
-			printf("%lf %lf %lf\n", P[i].x, P[i].y, P[i].z);
-		}
-		*/
 	}
 	
 	/* Every processor needs to have the total number of points n */
@@ -447,15 +441,10 @@ int main(int argc, char **argv){
 	ALocal = (int *) malloc (2 * localArraysize * sizeof (int));
 	BLocal = (int *) malloc (2 * localArraysize * sizeof (int));
 	
-	/* Local 3D Convex Hull */
+	/* Compute the local 3D Convex Hull */
 	hull(true, PLocal, localNumPoints, ALocal, BLocal, PLocal);
-	// for(i = 0; i < localArraysize * 2; i++){
-		// ALocal[i] = rank + 1;
-		// BLocal[i] = -rank -1;
-	// }
-
 	
-	/* Merging */
+	/* Merge local 3D convex hulls recursively */
 	myHeight = 0;
 	while (myHeight < height) { 	// not yet at top
         parent = (rank & (~(1 << myHeight)));
@@ -470,26 +459,21 @@ int main(int argc, char **argv){
   		    MPI_Recv(&(PLocal[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, MPI_COMM_WORLD, &status);
 			MPI_Recv(&(BLocal[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, MPI_COMM_WORLD, &status);
 
-  		    // merge half1 and half2 into mergeResult
+  		    // Merge convex hulls 
   		    merge(true, PLocal, rightChildSize * 2, ALocal, BLocal, PLocal);
-  		    // reassign half1 to merge result
-            //half1 = mergeResult;
-			//size = size * 2;  // double size
 			
-			//free(half2); 
-			//mergeResult = NULL;
-
             myHeight++;
 
         } else { // right child
-			// Re-index the arrays to make sense for the parent
+			// Re-index the arrays to match parent indexing
 			reindexPoints(PLocal, localArraysize, localArraysize);
 			reindexEvents(ALocal, localArraysize);
 			
-			// send local array to parent
+			// Send local point and event arrays to parent
             MPI_Send(PLocal, localArraysize, mpi_point_type, parent, 0, MPI_COMM_WORLD);
 			MPI_Send(ALocal, localArraysize * 2, MPI_INT, parent, 0, MPI_COMM_WORLD);
             if(myHeight != 0){
+				// Free memory
 				free(PLocal);  
 				free(ALocal);
 				free(BLocal);
@@ -498,6 +482,8 @@ int main(int argc, char **argv){
         }
     }
 	
+	// Process 0 contains the final merged 3D convex hull. 
+	// Process 0 writes the final result to file. 
 	if (rank == 0){
 		FILE * outfile;
 		outfile = fopen ("output_DC_MPI.out", "w");
@@ -507,48 +493,7 @@ int main(int argc, char **argv){
 			act(ALocal[i], PLocal);
 		}
 		fclose(outfile);
-		
-		//printHull(ALocal, PLocal);
 	}
-	
-	/* Synchronized printing to attest results */
-	//if (rank == 0){    
-		//printHull(ALocal, PLocal);
-		// printf("Rank %d: %d\n", rank, localArraysize);
-		// for(i = 0; i < localArraysize * 2; i++){
-			// //printf("{%lf, %lf, %lf}, [%d, %d]\n", PLocal[i].x, PLocal[i].y, PLocal[i].z, PLocal[i].prev, PLocal[i].next);
-			// printf("%d ", ALocal[i]);
-		// }
-		// printf("\n");
-		// for(i = 0; i < localArraysize * 2; i++){
-			// //printf("{%lf, %lf, %lf}, [%d, %d]\n", PLocal[i].x, PLocal[i].y, PLocal[i].z, PLocal[i].prev, PLocal[i].next);
-			// printf("%d ", BLocal[i]);
-		// }
-		// printf("\n");
-		//printf("Sending from %d to %d\n", rank, rank + 1);
-		//MPI_Send(&turn, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-	//}
-	//else{
-		//Blocks here until some signal is received from process p - 1
-		//printf("Waiting by %d from %d\n", rank, rank - 1);
-		//MPI_Recv(&turn, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
-		//printf("Received by %d\n", rank);
-		// printf("Rank %d: %d\n", rank, localArraysize);
-		// for(i = 0; i < localArraysize * 2; i++){
-			// //printf("{%lf, %lf, %lf}, [%d, %d]\n", PLocal[i].x, PLocal[i].y, PLocal[i].z, PLocal[i].prev, PLocal[i].next);
-			// printf("%d ", ALocal[i]);
-		// }
-		// printf("\n");
-		// for(i = 0; i < localArraysize * 2; i++){
-			// //printf("{%lf, %lf, %lf}, [%d, %d]\n", PLocal[i].x, PLocal[i].y, PLocal[i].z, PLocal[i].prev, PLocal[i].next);
-			// printf("%d ", BLocal[i]);
-		// }
-		// printf("\n");
-		//if (rank < numProcs - 1){
-			//printf("Sending from %d to %d\n", rank, rank + 1);
-			//MPI_Send(&turn, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-		//}
-	//}
 	
 	MPI_Type_free(&mpi_point_type);
 	MPI_Finalize();
