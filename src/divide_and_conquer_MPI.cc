@@ -114,6 +114,32 @@ int getGlobalIndex(int numPts, int numProc, int rank, int idx){
 	return idx + mu;
 }
 
+/*
+ * Function to re-index a point array to match its parent indices when combined. 
+ */
+void reindexPoints(Point *head, int size, int offset){
+	int i, p, n;
+	for(i = 0; i < size; i++){
+		p = (head + i)->prev;
+		n = (head + i)->next;
+		if(p != NIL){
+			(head + i)->prev = p + offset;
+		}
+		if(n != NIL){
+			(head + i)->next = n + offset;
+		}
+	}
+}
+
+/*
+ * Function to re-index an event array to match its reindexed point array. 
+ */
+void reindexEvents(int *A, int offset){
+	int i;
+	for(i = 0; A[i] != NIL; i++){
+		A[i] = A[i] + offset;
+	}
+}
 
 /*
  * Function to get indices of array given two pointers: head and displaced
@@ -327,7 +353,7 @@ void printHull(int *A, Point *head)
 {
 	printf("\nFaces on the hull:\n");
 	for (int i = 0; A[i] != NIL; i++) { 
-		printf("Face %d:	{%d %d %d}\n", i, (head + A[i])->prev, A[i], (head + A[i])->next);
+		printf("Face %d: {%d %d %d}\n", i, (head + A[i])->prev, A[i], (head + A[i])->next);
 		act(A[i], head);
 	}
 }
@@ -338,7 +364,7 @@ int main(int argc, char **argv){
 	int n, i, localArraysize, localNumPoints, height;
 	int parent, rightChild, rightChildSize, myHeight;	
 	Point *P, *PLocal; 
-	int *A, *ALocal, *BLocal;
+	int *ALocal, *BLocal;
 	
 	int turn = 0;
 	
@@ -456,21 +482,38 @@ int main(int argc, char **argv){
             myHeight++;
 
         } else { // right child
-			  // send local array to parent
-              MPI_Send(PLocal, localArraysize, mpi_point_type, parent, 0, MPI_COMM_WORLD);
-			  MPI_Send(ALocal, localArraysize * 2, MPI_INT, parent, 0, MPI_COMM_WORLD);
-              // if(myHeight != 0){
-				  // free(PLocal);  
-				  // free(ALocal);
-				  // free(BLocal);
-			  // }
-              myHeight = height;
+			// Re-index the arrays to make sense for the parent
+			reindexPoints(PLocal, localArraysize, localArraysize);
+			reindexEvents(ALocal, localArraysize);
+			
+			// send local array to parent
+            MPI_Send(PLocal, localArraysize, mpi_point_type, parent, 0, MPI_COMM_WORLD);
+			MPI_Send(ALocal, localArraysize * 2, MPI_INT, parent, 0, MPI_COMM_WORLD);
+            if(myHeight != 0){
+				free(PLocal);  
+				free(ALocal);
+				free(BLocal);
+			}
+            myHeight = height;
         }
     }
 	
+	if (rank == 0){
+		FILE * outfile;
+		outfile = fopen ("output_DC_MPI.out", "w");
+		
+		for (int i = 0; ALocal[i] != NIL; i++) { 
+			fprintf(outfile, "{%d, %d, %d}\n", (PLocal + ALocal[i])->prev, ALocal[i], (PLocal + ALocal[i])->next);
+			act(ALocal[i], PLocal);
+		}
+		fclose(outfile);
+		
+		//printHull(ALocal, PLocal);
+	}
+	
 	/* Synchronized printing to attest results */
-	if (rank == 0){    
-		printHull(ALocal, PLocal);
+	//if (rank == 0){    
+		//printHull(ALocal, PLocal);
 		// printf("Rank %d: %d\n", rank, localArraysize);
 		// for(i = 0; i < localArraysize * 2; i++){
 			// //printf("{%lf, %lf, %lf}, [%d, %d]\n", PLocal[i].x, PLocal[i].y, PLocal[i].z, PLocal[i].prev, PLocal[i].next);
@@ -484,11 +527,11 @@ int main(int argc, char **argv){
 		// printf("\n");
 		//printf("Sending from %d to %d\n", rank, rank + 1);
 		//MPI_Send(&turn, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-	}
-	else{
+	//}
+	//else{
 		//Blocks here until some signal is received from process p - 1
 		//printf("Waiting by %d from %d\n", rank, rank - 1);
-		MPI_Recv(&turn, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
+		//MPI_Recv(&turn, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status);
 		//printf("Received by %d\n", rank);
 		// printf("Rank %d: %d\n", rank, localArraysize);
 		// for(i = 0; i < localArraysize * 2; i++){
@@ -501,11 +544,11 @@ int main(int argc, char **argv){
 			// printf("%d ", BLocal[i]);
 		// }
 		// printf("\n");
-		if (rank < numProcs - 1){
+		//if (rank < numProcs - 1){
 			//printf("Sending from %d to %d\n", rank, rank + 1);
-			MPI_Send(&turn, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-		}
-	}
+			//MPI_Send(&turn, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+		//}
+	//}
 	
 	MPI_Type_free(&mpi_point_type);
 	MPI_Finalize();
