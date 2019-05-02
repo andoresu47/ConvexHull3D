@@ -362,21 +362,88 @@ void printHull(int *A, Point *head)
 }
 
 
+/*
+ * Function that implements the parallel divide-and-conquer algorithm for finding the 3D convex hull
+ */
+void divideAndConquer3DHull(int height, int rank, int n, int localNumPoints, int localArraysize, 
+							Point *PLocalL, Point *PLocalU, int *ALocalL, int *ALocalU, int *BLocalL, int *BLocalU, 
+							MPI_Datatype mpi_point_type, MPI_Comm comm, MPI_Status status){
+								
+	int parent, rightChild, rightChildSize, myHeight;
+	
+	// Compute the local lower and upper 3D Convex Hulls
+	hull(true, PLocalL, localNumPoints, ALocalL, BLocalL, PLocalL);
+	hull(false, PLocalU, localNumPoints, ALocalU, BLocalU, PLocalU);
+	
+	// Merge local 3D convex hulls recursively
+	myHeight = 0;
+	while (myHeight < height) { 	// not yet at top
+        parent = (rank & (~(1 << myHeight)));
+
+        if (parent == rank) { 		// left child
+		    rightChild = (rank | (1 << myHeight));
+			rightChildSize = n / pow(2, maxDepth(height, rightChild));
+			
+			swapArrays(&ALocalL, &BLocalL);
+			swapArrays(&ALocalU, &BLocalU);
+			
+  		    // Receive arrays from right child
+  		    MPI_Recv(&(PLocalL[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, comm, &status);
+			MPI_Recv(&(BLocalL[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, comm, &status);
+			MPI_Recv(&(PLocalU[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 1, comm, &status);
+			MPI_Recv(&(BLocalU[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 1, comm, &status);
+			
+  		    // Merge convex hulls 
+  		    merge(true, PLocalL, rightChildSize * 2, ALocalL, BLocalL, PLocalL);
+			merge(false, PLocalU, rightChildSize * 2, ALocalU, BLocalU, PLocalU);
+			
+            myHeight++;
+
+        } else { // right child
+			// Re-index the arrays to match parent indexing
+			reindexPoints(PLocalL, localArraysize, localArraysize);
+			reindexEvents(ALocalL, localArraysize);
+			reindexPoints(PLocalU, localArraysize, localArraysize);
+			reindexEvents(ALocalU, localArraysize);
+			
+			// Send local point and event arrays to parent
+            MPI_Send(PLocalL, localArraysize, mpi_point_type, parent, 0, comm);
+			MPI_Send(ALocalL, localArraysize * 2, MPI_INT, parent, 0, comm);
+			MPI_Send(PLocalU, localArraysize, mpi_point_type, parent, 1, comm);
+			MPI_Send(ALocalU, localArraysize * 2, MPI_INT, parent, 1, comm);
+			
+            if(myHeight != 0){
+				// Free memory
+				free(PLocalL);  
+				free(ALocalL);
+				free(BLocalL);
+				free(PLocalU);  
+				free(ALocalU);
+				free(BLocalU);
+			}
+            myHeight = height;
+        }
+    }
+}
+ 
+
 int main(int argc, char **argv){
-	/* Local variables */
+	// Local variables
 	int n, i, localArraysize, localNumPoints, height;
 	int parent, rightChild, rightChildSize, myHeight;	
 	Point *P, *PLocalL, *PLocalU; 
 	int *ALocalL, *ALocalU, *BLocalL, *BLocalU;
+	double startTime, localTime, totalTime;
+    double zeroStartTime, zeroTotalTime, processStartTime, processTotalTime;
 	
 	// For printing results in testing phase
 	int turn = 0;
 	
-	/* Initialize MPI */
+	// Initialize MPI
 	int rank, numProcs;
 	MPI_Status status;
 	
-	/* Create a type of struct Point */
+	// Create a type of struct Point
 	MPI_Datatype mpi_point_type;
     MPI_Datatype types[5] = {MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_INT, MPI_INT};
 	int blocklengths[5] = {1, 1, 1, 1, 1};
@@ -393,10 +460,10 @@ int main(int argc, char **argv){
 	MPI_Type_create_struct(5, blocklengths, offsets, types, &mpi_point_type);
 	MPI_Type_commit(&mpi_point_type);
 	
-	/* Compute total height of tree */
+	// Compute total height of tree
     height = log2(numProcs);
 	
-	/* If process 0, allocate memory for global points array and fill with values */
+	// If process 0, allocate memory for global points array and fill with values
 	if (rank == 0){
 		// Read input points from file
 		FILE * infile;
@@ -429,15 +496,15 @@ int main(int argc, char **argv){
 		}
 	}
 	
-	/* Every processor needs to have the total number of points n */
+	// Every processor needs to have the total number of points n
 	MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
 				
-	/* Allocate memory for local point array based on maximum depth of corresponding processor */	
+	// Allocate memory for local point array based on maximum depth of corresponding processor	
 	localArraysize = n / pow(2, maxDepth(height, rank));
 	PLocalL = (Point *) malloc(localArraysize * sizeof(Point));
 	PLocalU = (Point *) malloc(localArraysize * sizeof(Point));
 	
-	/* Scatter to fill with equally-sized value chunks */
+	// Scatter to fill with equally-sized value chunks
 	localNumPoints = n / numProcs;
 	MPI_Scatter(P, localNumPoints, mpi_point_type, PLocalL, localNumPoints, mpi_point_type, 0, MPI_COMM_WORLD);
 	
@@ -446,72 +513,35 @@ int main(int argc, char **argv){
 		free(P);
 	}
 	
-	/* Copy lower hull point array into the upper hull array*/
+	// Copy lower hull point array into the upper hull array
 	memcpy(PLocalU, PLocalL, localArraysize * sizeof(Point));
 		
-	/* Allocate memory for local main and temporal event arrays, for both lower and upper hulls */
+	// Allocate memory for local main and temporal event arrays, for both lower and upper hulls
 	ALocalL = (int *) malloc (2 * localArraysize * sizeof (int));
 	ALocalU = (int *) malloc (2 * localArraysize * sizeof (int));
 	BLocalL = (int *) malloc (2 * localArraysize * sizeof (int));
 	BLocalU = (int *) malloc (2 * localArraysize * sizeof (int));
+		
+	// Start timing
+    startTime = MPI_Wtime();
 	
-	/* Compute the local lower and upper 3D Convex Hulls */
-	hull(true, PLocalL, localNumPoints, ALocalL, BLocalL, PLocalL);
-	hull(false, PLocalU, localNumPoints, ALocalU, BLocalU, PLocalU);
+	// Main algorithm
+	processStartTime = MPI_Wtime();
+	divideAndConquer3DHull(height, rank, n, localNumPoints, localArraysize, 
+							PLocalL, PLocalU, ALocalL, ALocalU, BLocalL, BLocalU, 
+							mpi_point_type, MPI_COMM_WORLD, status);
+	processTotalTime = MPI_Wtime() - processStartTime;
+	printf("Process #%d of %d took %f seconds \n", rank, numProcs, processTotalTime);
 	
-	/* Merge local 3D convex hulls recursively */
-	myHeight = 0;
-	while (myHeight < height) { 	// not yet at top
-        parent = (rank & (~(1 << myHeight)));
-
-        if (parent == rank) { 		// left child
-		    rightChild = (rank | (1 << myHeight));
-			rightChildSize = n / pow(2, maxDepth(height, rightChild));
-			
-			swapArrays(&ALocalL, &BLocalL);
-			swapArrays(&ALocalU, &BLocalU);
-			
-  		    /* Receive arrays from right child */
-  		    MPI_Recv(&(PLocalL[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, MPI_COMM_WORLD, &status);
-			MPI_Recv(&(BLocalL[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, MPI_COMM_WORLD, &status);
-			MPI_Recv(&(PLocalU[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 1, MPI_COMM_WORLD, &status);
-			MPI_Recv(&(BLocalU[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 1, MPI_COMM_WORLD, &status);
-			
-  		    // Merge convex hulls 
-  		    merge(true, PLocalL, rightChildSize * 2, ALocalL, BLocalL, PLocalL);
-			merge(false, PLocalU, rightChildSize * 2, ALocalU, BLocalU, PLocalU);
-			
-            myHeight++;
-
-        } else { // right child
-			// Re-index the arrays to match parent indexing
-			reindexPoints(PLocalL, localArraysize, localArraysize);
-			reindexEvents(ALocalL, localArraysize);
-			reindexPoints(PLocalU, localArraysize, localArraysize);
-			reindexEvents(ALocalU, localArraysize);
-			
-			// Send local point and event arrays to parent
-            MPI_Send(PLocalL, localArraysize, mpi_point_type, parent, 0, MPI_COMM_WORLD);
-			MPI_Send(ALocalL, localArraysize * 2, MPI_INT, parent, 0, MPI_COMM_WORLD);
-			MPI_Send(PLocalU, localArraysize, mpi_point_type, parent, 1, MPI_COMM_WORLD);
-			MPI_Send(ALocalU, localArraysize * 2, MPI_INT, parent, 1, MPI_COMM_WORLD);
-			
-            if(myHeight != 0){
-				// Free memory
-				free(PLocalL);  
-				free(ALocalL);
-				free(BLocalL);
-				free(PLocalU);  
-				free(ALocalU);
-				free(BLocalU);
-			}
-            myHeight = height;
-        }
-    }
+	//End timing
+    localTime = MPI_Wtime() - startTime;
+    MPI_Reduce(&localTime, &totalTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 	
-	// Process 0 contains the final merged 3D convex hull. 
-	// Process 0 writes the final result to file. 
+	// As process 0 contains the final merged 3D convex hull, 
+	// it writes the final result to file. 
 	if (rank == 0){
+		printf("Execution time: %f seconds \n", totalTime);
+		
 		FILE * outfile;
 		outfile = fopen ("output_DC_MPI.out", "w");
 		
@@ -524,6 +554,7 @@ int main(int argc, char **argv){
 			act(ALocalU[i], PLocalU);
 		}
 		fclose(outfile);
+		
 		// Free memory
 		free(PLocalL);  
 		free(ALocalL);
