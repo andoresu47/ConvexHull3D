@@ -41,6 +41,23 @@ typedef struct Point{
 } Point;
 
 /*
+ * Function to remove the file extension of a file, thus returning only the filename. 
+ */
+char *remove(char* mystr) {
+    char *retstr;
+    char *lastdot;
+    if (mystr == NULL)
+         return NULL;
+    if ((retstr = (char*)malloc(strlen(mystr) + 1)) == NULL)
+        return NULL;
+    strcpy (retstr, mystr);
+    lastdot = strrchr (retstr, '.');
+    if (lastdot != NULL)
+        *lastdot = '\0';
+    return retstr;
+}
+
+/*
  * Function for determining the inequality/equality relationship between two Points based on their X coordinate.  
  */
 int Comparator(const void * a, const void * b){
@@ -344,7 +361,7 @@ void hull(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 		
 	// Recurse on left and right sides, swapping the A and B event arrays
 	hull(bottom, list, n/2, B, A, head);  							// build left side
-	hull(bottom, list + n/2, n-n/2, B+n/2*2, A+n/2*2, head);		// build right side
+	hull(bottom, list + n/2, n-n/2, B+n, A+n, head);		        // build right side
 
 	merge(bottom, list, n, A, B, head);
 }
@@ -366,7 +383,7 @@ void printHull(int *A, Point *head)
  */
 void divideAndConquer3DHull(int height, int rank, int n, int localNumPoints, int localArraysize, 
 							Point *PLocalL, Point *PLocalU, int *ALocalL, int *ALocalU, int *BLocalL, int *BLocalU, 
-							MPI_Datatype mpi_point_type, MPI_Comm comm, MPI_Status status){
+							MPI_Datatype mpi_point_type, MPI_Comm comm){
 	// Local variables							
 	int parent, rightChild, rightChildSize, myHeight;
 	
@@ -378,19 +395,19 @@ void divideAndConquer3DHull(int height, int rank, int n, int localNumPoints, int
 	myHeight = 0;
 	while (myHeight < height) { 	// not yet at top
         parent = (rank & (~(1 << myHeight)));
-
+        
         if (parent == rank) { 		// left child
 		    rightChild = (rank | (1 << myHeight));
 			rightChildSize = n / pow(2, maxDepth(height, rightChild));
-			
+                        
 			swapArrays(&ALocalL, &BLocalL);
 			swapArrays(&ALocalU, &BLocalU);
 			
   		    // Receive arrays from right child
-  		    MPI_Recv(&(PLocalL[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, comm, &status);
-			MPI_Recv(&(BLocalL[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, comm, &status);
-			MPI_Recv(&(PLocalU[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 1, comm, &status);
-			MPI_Recv(&(BLocalU[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 1, comm, &status);
+  		    MPI_Recv(&(PLocalL[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 0, comm, MPI_STATUS_IGNORE);
+			MPI_Recv(&(BLocalL[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 0, comm, MPI_STATUS_IGNORE);
+			MPI_Recv(&(PLocalU[rightChildSize]), rightChildSize, mpi_point_type, rightChild, 1, comm, MPI_STATUS_IGNORE);
+			MPI_Recv(&(BLocalU[rightChildSize * 2]), rightChildSize * 2, MPI_INT, rightChild, 1, comm, MPI_STATUS_IGNORE);
 			
   		    // Merge convex hulls 
   		    merge(true, PLocalL, rightChildSize * 2, ALocalL, BLocalL, PLocalL);
@@ -429,10 +446,10 @@ void divideAndConquer3DHull(int height, int rank, int n, int localNumPoints, int
 int main(int argc, char **argv){
 	// Local variables
 	int n, i, localArraysize, localNumPoints, height;
-	int parent, rightChild, rightChildSize, myHeight;	
 	Point *P, *PLocalL, *PLocalU; 
 	int *ALocalL, *ALocalU, *BLocalL, *BLocalU;
 	double startTime, localTime, totalTime;
+	bool flag;
 	
 	// For printing results in testing phase
 	int turn = 0;
@@ -467,6 +484,8 @@ int main(int argc, char **argv){
 		if(argc > 1){
 			char path[128] = "./input_points/raw/";
 			strcat(path, argv[1]);
+            
+            printf("Reading input from %s\n", path);
 		
 			// Read input points from file
 			FILE * infile;
@@ -487,6 +506,8 @@ int main(int argc, char **argv){
 			if(argc > 2){
 				char path2[128] = "./input_points/sorted/";
 				strcat(path2, argv[1]);
+                
+                printf("Writing sorted points to %s\n", path2);
 				
 				if(strcmp(argv[2], "-sort") == 0){
 					qsort (P, n, sizeof(Point), Comparator);
@@ -515,8 +536,8 @@ int main(int argc, char **argv){
 	localArraysize = n / pow(2, maxDepth(height, rank));
 	PLocalL = (Point *) malloc(localArraysize * sizeof(Point));
 	PLocalU = (Point *) malloc(localArraysize * sizeof(Point));
-	
-	// Scatter to fill with equally-sized value chunks
+    
+    // Scatter to fill with equally-sized value chunks
 	localNumPoints = n / numProcs;
 	MPI_Scatter(P, localNumPoints, mpi_point_type, PLocalL, localNumPoints, mpi_point_type, 0, MPI_COMM_WORLD);
 	
@@ -538,7 +559,7 @@ int main(int argc, char **argv){
 	startTime = MPI_Wtime();				// Start timing
 	divideAndConquer3DHull(height, rank, n, localNumPoints, localArraysize, 
 							PLocalL, PLocalU, ALocalL, ALocalU, BLocalL, BLocalU, 
-							mpi_point_type, MPI_COMM_WORLD, status);
+							mpi_point_type, MPI_COMM_WORLD);
 	localTime = MPI_Wtime() - startTime;	// End timing
 	printf("Process %d took %f seconds \n", rank, localTime);
 	    
@@ -547,18 +568,35 @@ int main(int argc, char **argv){
 	// As process 0 contains the final merged 3D convex hull, 
 	// it writes the final result to file. 
 	if (rank == 0){
+		int *CLocalL, *CLocalU;
+        char path3[128] = "./output/";
+        strcat(path3, remove(argv[1]));
+        strcat(path3, "_MPI.out");
+        
 		printf("Execution time: %f seconds \n", totalTime);
+        
+        printf("Writing output faces to %s\n", path3);
 		
 		FILE * outfile;
-		outfile = fopen ("./output/output_4096_MPI.out", "w");
+		outfile = fopen (path3, "w");
 		
-		for (int i = 0; ALocalL[i] != NIL; i++) { 
-			fprintf(outfile, "{%d, %d, %d}\n", (PLocalL + ALocalL[i])->prev, ALocalL[i], (PLocalL + ALocalL[i])->next);
-			act(ALocalL[i], PLocalL);
+		// To know which array holds the final result as a consequence of the A-B swapping.
+		if(height % 2 == 0){
+			CLocalL = ALocalL;
+			CLocalU = ALocalU;
 		}
-		for (int i = 0; ALocalU[i] != NIL; i++) { 
-			fprintf(outfile, "{%d, %d, %d}\n", (PLocalU + ALocalU[i])->prev, ALocalU[i], (PLocalU + ALocalU[i])->next);
-			act(ALocalU[i], PLocalU);
+		else{
+			CLocalL = BLocalL;
+			CLocalU = BLocalU;
+		}
+		
+		for (int i = 0; CLocalL[i] != NIL; i++) { 
+			fprintf(outfile, "{%d, %d, %d}\n", (PLocalL + CLocalL[i])->prev, CLocalL[i], (PLocalL + CLocalL[i])->next);
+			act(CLocalL[i], PLocalL);
+		}
+		for (int i = 0; CLocalU[i] != NIL; i++) { 
+			fprintf(outfile, "{%d, %d, %d}\n", (PLocalU + CLocalU[i])->prev, CLocalU[i], (PLocalU + CLocalU[i])->next);
+			act(CLocalU[i], PLocalU);
 		}
 		fclose(outfile);
 		
