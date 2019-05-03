@@ -361,14 +361,13 @@ void printHull(int *A, Point *head)
 	}
 }
 
-
 /*
- * Function that implements the parallel divide-and-conquer algorithm for finding the 3D convex hull
+ * Function that implements the parallel divide-and-conquer algorithm for finding the 3D convex hull based on kinetic 2D hulls.
  */
 void divideAndConquer3DHull(int height, int rank, int n, int localNumPoints, int localArraysize, 
 							Point *PLocalL, Point *PLocalU, int *ALocalL, int *ALocalU, int *BLocalL, int *BLocalU, 
 							MPI_Datatype mpi_point_type, MPI_Comm comm, MPI_Status status){
-								
+	// Local variables							
 	int parent, rightChild, rightChildSize, myHeight;
 	
 	// Compute the local lower and upper 3D Convex Hulls
@@ -434,7 +433,6 @@ int main(int argc, char **argv){
 	Point *P, *PLocalL, *PLocalU; 
 	int *ALocalL, *ALocalU, *BLocalL, *BLocalU;
 	double startTime, localTime, totalTime;
-    double zeroStartTime, zeroTotalTime, processStartTime, processTotalTime;
 	
 	// For printing results in testing phase
 	int turn = 0;
@@ -464,35 +462,49 @@ int main(int argc, char **argv){
     height = log2(numProcs);
 	
 	// If process 0, allocate memory for global points array and fill with values
-	if (rank == 0){
-		// Read input points from file
-		FILE * infile;
-		infile = fopen ("points.in", "r");
+	if (rank == 0){		
 	
-		fscanf(infile, "%d\n", &n);
-	
-		P = (Point*) malloc (n * sizeof (Point));
-	
-		for(i = 0; i < n; i++){
-			fscanf(infile, "{%lf, %lf, %lf}\n", &P[i].x, &P[i].y, &P[i].z);
-			P[i].prev = P[i].next = NIL;
-		}
-		
-		fclose(infile);
-	
-		// If input points were not already sorted, they are sorted and written to a new file. 
 		if(argc > 1){
-			if(strcmp(argv[1], "-sort") == 0){
-				qsort (P, n, sizeof(Point), Comparator);
-			
-				FILE * auxfile;
-				auxfile = fopen ("points_srtd.in", "w");
-				fprintf(auxfile, "%d\n", n);
-				for(i = 0; i < n; i++){
-					fprintf(auxfile, "{%lf, %lf, %lf}\n", P[i].x, P[i].y, P[i].z);
-				}
-				fclose(auxfile);
+			char path[128] = "./input_points/raw/";
+			strcat(path, argv[1]);
+		
+			// Read input points from file
+			FILE * infile;
+			infile = fopen (path, "r");
+	
+			fscanf(infile, "%d\n", &n);
+	
+			P = (Point*) malloc (n * sizeof (Point));
+	
+			for(i = 0; i < n; i++){
+				fscanf(infile, "{%lf, %lf, %lf}\n", &P[i].x, &P[i].y, &P[i].z);
+				P[i].prev = P[i].next = NIL;
 			}
+		
+			fclose(infile);
+		
+			// If input points were not already sorted, they are sorted and written to a new file. 
+			if(argc > 2){
+				char path2[128] = "./input_points/sorted/";
+				strcat(path2, argv[1]);
+				
+				if(strcmp(argv[2], "-sort") == 0){
+					qsort (P, n, sizeof(Point), Comparator);
+			
+					FILE * auxfile;
+					auxfile = fopen (path2, "w");
+					fprintf(auxfile, "%d\n", n);
+					for(i = 0; i < n; i++){
+						fprintf(auxfile, "{%lf, %lf, %lf}\n", P[i].x, P[i].y, P[i].z);
+					}
+					fclose(auxfile);
+				}
+			}
+		}
+		else{
+			// If no input file is passed the program aborts
+			printf("No input file provided\n");
+			MPI_Abort(MPI_COMM_WORLD, 1);
 		}
 	}
 	
@@ -522,19 +534,14 @@ int main(int argc, char **argv){
 	BLocalL = (int *) malloc (2 * localArraysize * sizeof (int));
 	BLocalU = (int *) malloc (2 * localArraysize * sizeof (int));
 		
-	// Start timing
-    startTime = MPI_Wtime();
-	
-	// Main algorithm
-	processStartTime = MPI_Wtime();
+	// Find 3D Convex Hull
+	startTime = MPI_Wtime();				// Start timing
 	divideAndConquer3DHull(height, rank, n, localNumPoints, localArraysize, 
 							PLocalL, PLocalU, ALocalL, ALocalU, BLocalL, BLocalU, 
 							mpi_point_type, MPI_COMM_WORLD, status);
-	processTotalTime = MPI_Wtime() - processStartTime;
-	printf("Process #%d of %d took %f seconds \n", rank, numProcs, processTotalTime);
-	
-	//End timing
-    localTime = MPI_Wtime() - startTime;
+	localTime = MPI_Wtime() - startTime;	// End timing
+	printf("Process %d took %f seconds \n", rank, localTime);
+	    
     MPI_Reduce(&localTime, &totalTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 	
 	// As process 0 contains the final merged 3D convex hull, 
@@ -543,7 +550,7 @@ int main(int argc, char **argv){
 		printf("Execution time: %f seconds \n", totalTime);
 		
 		FILE * outfile;
-		outfile = fopen ("output_DC_MPI.out", "w");
+		outfile = fopen ("./output/output_4096_MPI.out", "w");
 		
 		for (int i = 0; ALocalL[i] != NIL; i++) { 
 			fprintf(outfile, "{%d, %d, %d}\n", (PLocalL + ALocalL[i])->prev, ALocalL[i], (PLocalL + ALocalL[i])->next);
