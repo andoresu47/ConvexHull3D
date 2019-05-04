@@ -19,8 +19,6 @@
  * 	- No 4 points lie on the same plane. 
  */
  
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -119,18 +117,6 @@ void act(int pointIndex, Point *head){
 		(head + (head + pointIndex)->prev)->next = (head + pointIndex)->next;
 		(head + (head + pointIndex)->next)->prev = (head + pointIndex)->prev;
 	}
-}
-
-/*
- * Function to map local to global indices.
- */
-int getGlobalIndex(int numPts, int numProc, int rank, int idx){
-	int L = numPts / numProc;
-    int R = numPts % numProc;
-    int mu_prefix = rank * L + MIN(rank, R);
-    int mu;
-	
-	return idx + mu;
 }
 
 /*
@@ -438,6 +424,7 @@ void divideAndConquer3DHull(int height, int rank, int n, int localNumPoints, int
 				free(BLocalU);
 			}
             myHeight = height;
+			return;
         }
     }
 }
@@ -485,7 +472,7 @@ int main(int argc, char **argv){
 			char path[128] = "../input/raw/";
 			strcat(path, argv[1]);
             
-            printf("Reading input from %s\n", path);
+            //printf("Reading input from %s\n", path);
 		
 			// Read input points from file
 			FILE * infile;
@@ -507,7 +494,7 @@ int main(int argc, char **argv){
 				char path2[128] = "../input/sorted/";
 				strcat(path2, argv[1]);
                 
-                printf("Writing sorted points to %s\n", path2);
+                //printf("Writing sorted points to %s\n", path2);
 				
 				if(strcmp(argv[2], "-sort") == 0){
 					qsort (P, n, sizeof(Point), Comparator);
@@ -561,8 +548,9 @@ int main(int argc, char **argv){
 							PLocalL, PLocalU, ALocalL, ALocalU, BLocalL, BLocalU, 
 							mpi_point_type, MPI_COMM_WORLD);
 	localTime = MPI_Wtime() - startTime;	// End timing
-	printf("Process %d took %f seconds \n", rank, localTime);
+	//printf("Process %d took %f seconds \n", rank, localTime);
 	    
+	// Compute the parallel execution time
     MPI_Reduce(&localTime, &totalTime, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 	
 	// As process 0 contains the final merged 3D convex hull, 
@@ -573,9 +561,10 @@ int main(int argc, char **argv){
         strcat(path3, remove(argv[1]));
         strcat(path3, "_MPI.out");
         
-		printf("Execution time: %f seconds \n", totalTime);
+		//printf("Execution time: %f seconds \n", totalTime);
+		printf("%f", totalTime);
         
-        printf("Writing output faces to %s\n", path3);
+        //printf("Writing output faces to %s\n", path3);
 		
 		FILE * outfile;
 		outfile = fopen (path3, "w");
