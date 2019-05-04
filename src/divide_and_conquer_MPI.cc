@@ -482,7 +482,7 @@ int main(int argc, char **argv){
 	if (rank == 0){		
 	
 		if(argc > 1){
-			char path[128] = "./input_points/raw/";
+			char path[128] = "../input/raw/";
 			strcat(path, argv[1]);
             
             printf("Reading input from %s\n", path);
@@ -504,7 +504,7 @@ int main(int argc, char **argv){
 		
 			// If input points were not already sorted, they are sorted and written to a new file. 
 			if(argc > 2){
-				char path2[128] = "./input_points/sorted/";
+				char path2[128] = "../input/sorted/";
 				strcat(path2, argv[1]);
                 
                 printf("Writing sorted points to %s\n", path2);
@@ -569,7 +569,7 @@ int main(int argc, char **argv){
 	// it writes the final result to file. 
 	if (rank == 0){
 		int *CLocalL, *CLocalU;
-        char path3[128] = "./output/";
+        char path3[128] = "../output/";
         strcat(path3, remove(argv[1]));
         strcat(path3, "_MPI.out");
         
