@@ -107,15 +107,29 @@ inline double time(int pIndex, int qIndex, int rIndex, Point *head){
  * Function to insert delete points from the linked-list-like point structure.
  */
 void act(int pointIndex, Point *head){
-	// Insert point
-	if ((head + (head + pointIndex)->prev)->next != pointIndex){
-		(head + (head + pointIndex)->prev)->next = pointIndex;
-		(head + (head + pointIndex)->next)->prev = pointIndex;
+	Point *prevP, *nextP;
+	
+	prevP = head + (head + pointIndex)->prev;
+	nextP = head + (head + pointIndex)->next;
+	
+	if ((head + pointIndex)->prev == NIL){
+		if ((head + pointIndex)->next != NIL){
+			nextP->prev = pointIndex;
+		}
 	}
-	// Delete point
 	else{
-		(head + (head + pointIndex)->prev)->next = (head + pointIndex)->next;
-		(head + (head + pointIndex)->next)->prev = (head + pointIndex)->prev;
+		// Insert point
+		if (prevP->next != pointIndex){
+			prevP->next = pointIndex;
+			if ((head + pointIndex)->next != NIL){
+				nextP->prev = pointIndex;
+			}
+		}
+		// Delete point
+		else{
+			prevP->next = (head + pointIndex)->next;
+			nextP->prev = (head + pointIndex)->prev;
+		}
 	}
 }
 
@@ -187,7 +201,7 @@ void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 	// mid: beginning of right hull based on x coordinate
 	int u, v, mid;  
 	double t[6], oldt, newt;  
-	int i, j, k, l, minl;
+	int i, j, k, l, minl, prevL, nextL, prevR, nextR;
 	
 	// End of list for u
 	u = getIndex(head, list + n/2 -1);
@@ -196,18 +210,12 @@ void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 	// Find initial bridge
 	// Start in the middle and move the bridge vertices out to each side.
 	for ( ; ; ){  
-		int p1, q1, r1, 
-			p2, q2, r2;
-			
-		p1 = u; q1 = v; r1 = (head + v)->next;
-		p2 = (head + u)->prev; q2 = u; r2 = v;
-		
 		// Lower hull: turn must be negative
 		if(bottom){
-			if (!hasnil(p1, q1, r1) && turn((head + p1), (head + q1), (head + r1)) < 0){
+			if (!hasnil(u, v, (head + v)->next) && turn((head + u), (head + v), (head + ((head + v)->next))) < 0){
 				v = (head + v)->next;
 			}
-			else if (!hasnil(p2, q2, r2) && turn((head + p2), (head + q2), (head + r2)) < 0){
+			else if (!hasnil((head + u)->prev, u, v) && turn((head + ((head + u)->prev)), (head + u), (head + v)) < 0){
 				u = (head + u)->prev;  
 			}
 			else{
@@ -216,10 +224,10 @@ void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 		}
 		// Upper hull: turn must be positive
 		else{
-			if (!hasnil(p1, q1, r1) && turn((head + p1), (head + q1), (head + r1)) > 0){
+			if (!hasnil(u, v, (head + v)->next) && turn((head + u), (head + v), (head + ((head + v)->next))) > 0){
 				v = (head + v)->next;
 			}
-			else if (!hasnil(p2, q2, r2) && turn((head + p2), (head + q2), (head + r2)) > 0){
+			else if (!hasnil((head + u)->prev, u, v) && turn((head + ((head + u)->prev)), (head + u), (head + v)) > 0){
 				u = (head + u)->prev;  
 			}
 			else{
@@ -231,8 +239,29 @@ void merge(bool bottom, Point *list, int n, int *A, int *B, Point *head) {
 	// Merge by tracking bridge uv over time
 	// Progress through time in an infinite loop until no more insertion/deletion events occur
 	for (i = k = 0, j = n/2*2, oldt = -INF; ; oldt = newt) {  
-		t[0] = time((head + B[i])->prev, B[i], (head + B[i])->next, head);  
-		t[1] = time((head + B[j])->prev, B[j], (head + B[j])->next, head);    
+		// To avoid buffer underflow
+		if (B[i] == NIL){
+			prevL = NIL;
+			nextL = NIL;
+		}
+		else{
+			prevL = (head + B[i])->prev;
+			nextL = (head + B[i])->next;
+		}
+		
+		// To avoid buffer underflow
+		if (B[j] == NIL){
+			prevR = NIL;
+			nextR = NIL;
+		}
+		else{
+			prevR = (head + B[j])->prev;
+			nextR = (head + B[j])->next;
+		}
+		
+		// Compute time values
+		t[0] = time(prevL, B[i], nextL, head);  
+		t[1] = time(prevR, B[j], nextR, head);    
 		t[2] = time(u, (head + u)->next, v, head);  
 		t[3] = time((head + u)->prev, u, v, head);
 		t[4] = time(u, (head + v)->prev, v, head); 
