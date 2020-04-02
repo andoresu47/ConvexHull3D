@@ -4,6 +4,8 @@ This project consists of a parallel implementation of a divide-and-conquer algor
 ## Algorithm
 The implementation is based on Chan’s [minimalist 3-d convex hull algorithm](http://tmc.web.engr.illinois.edu/ch3d/ch3d.pdf), an O(n logn) time topdown divide-and-conquer algorithm for computing convex hulls in three dimensions . This algorithm works by treating the three-dimensional problem as a two-dimensional kinetic problem. This means that the 3-d set S of n points is seen as a moving image, or movie, of 2-d projected points as the points are rotated at an angle **α** about the x-axis. The main idea behind this algorithm’s correctness is that affine transformations preserve points, straight-lines and planes, as well as convexity. Hence, points p<sub>i</sub> whose projected points p'<sub>i</sub> belong to the projected 2-d hulls, also belong to the 3-d convex hull.
 
+![alt text](https://github.com/andoresu47/ConvexHull3D/blob/master/images/visualization.png "Visualization")
+
 As points are rotated, the kinetic 2-d hull changes by a point p'<sub>j</sub> being inserted between end-points p'<sub>i</sub>p'<sub>k</sub> of an edge, or by a point p'<sub>j</sub> being deleted, destroying two edges (p'<sub>i</sub>, p'<sub>j</sub>), (p'<sub>j</sub>, p'<sub>k</sub>) and creating a new one (p'<sub>i</sub>, p'<sub>k</sub>). For both of these events, a 3-d hull triangle -or facet - (p<sub>i</sub>p<sub>j</sub>p<sub>k</sub>) is identified. A point can be inserted or deleted at most once. Thus, by keeping track of the insertion and deletion events of the kinetic 2-d movie, each identified as a triplet of points, the 3-d convex hull can be constructed in linear time.
 
 The divide-and-conquer approach can be applied by sorting the points *P* by increasing x-coordinates, and recursively solving the kinetic 2-d problem for the left and right hulls L and R, consisting of the points p<sub>1</sub>,...,p<sub>⌊n/2⌋</sub> and p<sub>⌊n/2⌋+1</sub>,...,p<sub>n</sub> respectively. Merging the two 3-d convex hulls L and R, whose kinetic 2-d event lists are now known, is done by keeping track of the lower (or upper) tangent joining the projected hulls. As the points are rotated, the merged hull changes by individual changes of the hulls L and R or by the lower (upper) tangent no longer supporting the neighbors of the end-points from below (above).
@@ -28,7 +30,7 @@ mpirun -np 8 ./divide_and_conquer_MPI normal_origin_4096.in -sort
 
 The input and output files get generated according to the following project file structure:
 
-Insert image...
+![alt text](https://github.com/andoresu47/ConvexHull3D/blob/master/images/structure.png "Project structure")
 
 The input files consist of coordinates x, y and z in the format:
 
